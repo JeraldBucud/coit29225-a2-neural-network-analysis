@@ -8,6 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 
 DATA_FILE = "data/CaliforniaHousing.csv"
@@ -157,3 +158,94 @@ plt.savefig(
 )
 
 plt.close()
+
+# ---------------------------------------------------------------------------
+# K-means Clustering Analysis
+# ---------------------------------------------------------------------------
+
+kmeans_columns = [
+    "longitude",
+    "latitude",
+    "median_house_value",
+]
+
+kmeans_features = housing_clean[kmeans_columns]
+
+# Standardise variables before K-means because the feature scales differ.
+kmeans_scaler = StandardScaler()
+scaled_kmeans_features = kmeans_scaler.fit_transform(kmeans_features)
+
+
+def plot_kmeans_clusters(data, scaled_data, n_clusters, output_file):
+    """Fit K-means and save a geographical cluster visualisation."""
+
+    model = KMeans(
+        n_clusters=n_clusters,
+        random_state=42,
+        n_init=10,
+    )
+
+    cluster_labels = model.fit_predict(scaled_data)
+
+    plt.figure(figsize=(10, 8))
+
+    markers = ["o", "^", "s", "D", "X"]
+
+    for cluster_id in range(n_clusters):
+        cluster_mask = cluster_labels == cluster_id
+
+        scatter = plt.scatter(
+            data.loc[cluster_mask, "longitude"],
+            data.loc[cluster_mask, "latitude"],
+            c=data.loc[cluster_mask, "median_house_value"],
+            cmap="viridis",
+            vmin=data["median_house_value"].min(),
+            vmax=data["median_house_value"].max(),
+            marker=markers[cluster_id],
+            s=20,
+            alpha=0.6,
+            label=f"Cluster {cluster_id}",
+        )
+
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+    plt.title(
+        f"California Housing K-means Clustering - {n_clusters} Clusters"
+    )
+
+    colorbar = plt.colorbar(scatter)
+    colorbar.set_label("Median House Value ($)")
+
+    plt.legend(title="K-means Cluster")
+
+    plt.tight_layout()
+
+    plt.savefig(
+        output_file,
+        dpi=300,
+        bbox_inches="tight",
+    )
+
+    plt.close()
+
+    return cluster_labels
+
+clusters_4 = plot_kmeans_clusters(
+    housing_clean,
+    scaled_kmeans_features,
+    4,
+    "outputs/problem1_part1/kmeans_4_clusters.png",
+)
+
+clusters_5 = plot_kmeans_clusters(
+    housing_clean,
+    scaled_kmeans_features,
+    5,
+    "outputs/problem1_part1/kmeans_5_clusters.png",
+)
+
+print("\nK-means cluster counts - 4 clusters:")
+print(pd.Series(clusters_4).value_counts().sort_index())
+
+print("\nK-means cluster counts - 5 clusters:")
+print(pd.Series(clusters_5).value_counts().sort_index())
