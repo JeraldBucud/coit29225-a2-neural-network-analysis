@@ -6,6 +6,8 @@ California Housing dataset analysis and preprocessing.
 
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 
 DATA_FILE = "data/CaliforniaHousing.csv"
@@ -100,4 +102,58 @@ plt.savefig(
     bbox_inches="tight"
 )
 
-plt.show()
+plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Principal Component Analysis (PCA)
+# ---------------------------------------------------------------------------
+
+feature_columns = [
+    "longitude",
+    "latitude",
+    "housing_median_age",
+    "total_rooms",
+    "total_bedrooms",
+    "population",
+    "households",
+    "median_income",
+]
+
+pca_features = housing_clean[feature_columns]
+
+# Standardise the predictor variables because PCA is sensitive to differences
+# in feature scale.
+scaler = StandardScaler()
+scaled_features = scaler.fit_transform(pca_features)
+
+pca = PCA()
+pca.fit(scaled_features)
+
+explained_variance = pca.explained_variance_ratio_
+
+print("\nPCA explained variance ratio:")
+for component_number, variance in enumerate(explained_variance, start=1):
+    print(f"PC{component_number}: {variance:.4f}")
+
+component_labels = [
+    f"PC{component_number}"
+    for component_number in range(1, len(explained_variance) + 1)
+]
+
+plt.figure(figsize=(9, 6))
+plt.bar(component_labels, explained_variance)
+
+plt.xlabel("Principal Component")
+plt.ylabel("Proportion of Explained Variance")
+plt.title("PCA Explained Variance - California Housing Dataset")
+
+plt.tight_layout()
+
+plt.savefig(
+    "outputs/problem1_part1/pca_explained_variance.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
