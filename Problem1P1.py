@@ -5,6 +5,7 @@ California Housing dataset analysis and preprocessing.
 """
 
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 DATA_FILE = "data/CaliforniaHousing.csv"
@@ -48,3 +49,55 @@ housing_clean["total_bedrooms"] = housing_clean["total_bedrooms"].fillna(
 
 print("\nMissing values after preprocessing:")
 print(housing_clean.isnull().sum())
+
+
+# ---------------------------------------------------------------------------
+# Median House Value Distribution by Location
+# ---------------------------------------------------------------------------
+
+# Scale population values so they can be used as readable scatter-point sizes.
+population_marker_size = housing_clean["population"] / 100
+
+plt.figure(figsize=(10, 8))
+
+scatter = plt.scatter(
+    housing_clean["longitude"],
+    housing_clean["latitude"],
+    s=population_marker_size,
+    c=housing_clean["median_house_value"],
+    cmap="viridis",
+    alpha=0.5
+)
+
+plt.xlabel("Longitude")
+plt.ylabel("Latitude")
+plt.title("California Median House Value Distribution by Location")
+
+colorbar = plt.colorbar(scatter)
+colorbar.set_label("Median House Value ($)")
+
+# Add reference markers so the population-based point sizes are interpretable.
+for population in [1000, 3000, 5000]:
+    plt.scatter(
+        [],
+        [],
+        s=population / 100,
+        c="gray",
+        alpha=0.5,
+        label=f"{population:,}"
+    )
+
+plt.legend(
+    title="Population",
+    loc="upper right"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    "outputs/problem1_part1/median_house_value_by_location.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+
+plt.show()
