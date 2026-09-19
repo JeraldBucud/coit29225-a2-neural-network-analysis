@@ -4,12 +4,18 @@ COIT29225 Assessment 2 - Problem 1, Part 1
 California Housing dataset analysis and preprocessing.
 """
 
+import tensorflow as tf
+
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.optimizers import Adam
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 DATA_FILE = "data/CaliforniaHousing.csv"
@@ -291,3 +297,149 @@ print(f"Testing samples: {len(X_test)}")
 print(f"Number of input features: {X_train.shape[1]}")
 
 scaler.fit_transform(X)
+
+
+# ---------------------------------------------------------------------------
+# Baseline Deep Neural Network Regression Model
+# ---------------------------------------------------------------------------
+
+# Use a fixed seed so the baseline experiment can be reproduced.
+tf.keras.utils.set_random_seed(42)
+
+baseline_model = Sequential([
+    Input(shape=(X_train_scaled.shape[1],)),
+    Dense(32, activation="relu"),
+    Dense(16, activation="relu"),
+    Dense(1),
+])
+
+baseline_model.compile(
+    optimizer=Adam(learning_rate=0.001),
+    loss="mse",
+    metrics=["mae"],
+)
+
+print("\nBaseline neural network architecture:")
+baseline_model.summary()
+
+# ---------------------------------------------------------------------------
+# Baseline Model Training
+# ---------------------------------------------------------------------------
+
+print("\nTraining baseline neural network...")
+
+baseline_history = baseline_model.fit(
+    X_train_scaled,
+    y_train,
+    validation_split=0.20,
+    epochs=100,
+    batch_size=64,
+    verbose=1,
+)
+
+# ---------------------------------------------------------------------------
+# Baseline Training Curves
+# ---------------------------------------------------------------------------
+
+epochs = range(1, len(baseline_history.history["loss"]) + 1)
+
+# Mean Squared Error curve.
+plt.figure(figsize=(9, 6))
+plt.plot(epochs, baseline_history.history["loss"], label="Training MSE")
+plt.plot(epochs, baseline_history.history["val_loss"], label="Validation MSE")
+
+plt.xlabel("Epoch")
+plt.ylabel("Mean Squared Error")
+plt.title("Baseline DNN - MSE Training Curve")
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    "outputs/problem1_part1/baseline_mse_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# Mean Absolute Error curve.
+plt.figure(figsize=(9, 6))
+plt.plot(epochs, baseline_history.history["mae"], label="Training MAE")
+plt.plot(epochs, baseline_history.history["val_mae"], label="Validation MAE")
+
+plt.xlabel("Epoch")
+plt.ylabel("Mean Absolute Error ($)")
+plt.title("Baseline DNN - MAE Training Curve")
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    "outputs/problem1_part1/baseline_mae_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+# ---------------------------------------------------------------------------
+# Baseline Model Evaluation
+# ---------------------------------------------------------------------------
+
+test_predictions = baseline_model.predict(
+    X_test_scaled,
+    verbose=0,
+).reshape(-1)
+
+test_mse = mean_squared_error(y_test, test_predictions)
+test_mae = mean_absolute_error(y_test, test_predictions)
+test_r2 = r2_score(y_test, test_predictions)
+
+print("\nBaseline test results:")
+print(f"MSE: {test_mse:,.2f}")
+print(f"MAE: ${test_mae:,.2f}")
+print(f"R2: {test_r2:.4f}")
+
+
+# Compare actual and predicted house values.
+plt.figure(figsize=(8, 8))
+
+plt.scatter(
+    y_test,
+    test_predictions,
+    alpha=0.4,
+    s=20,
+)
+
+minimum_value = min(y_test.min(), test_predictions.min())
+maximum_value = max(y_test.max(), test_predictions.max())
+
+plt.plot(
+    [minimum_value, maximum_value],
+    [minimum_value, maximum_value],
+    linestyle="--",
+    label="Perfect prediction",
+)
+
+plt.xlabel("Actual Median House Value ($)")
+plt.ylabel("Predicted Median House Value ($)")
+plt.title("Baseline DNN - Actual vs Predicted House Values")
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    "outputs/problem1_part1/baseline_actual_vs_predicted.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+print("\n10 example house-price predictions:")
+
+prediction_examples = pd.DataFrame({
+    "Actual House Value": y_test.iloc[:10].to_numpy(),
+    "Predicted House Value": test_predictions[:10],
+})
+
+print(prediction_examples.to_string(index=False))
