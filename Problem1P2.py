@@ -12,7 +12,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -541,3 +544,106 @@ print(
     f"Properties at $3,000,000 maximum: "
     f"{maximum_price_count}"
 )
+
+
+# ---------------------------------------------------------------------------
+# K-means Clustering Analysis
+# ---------------------------------------------------------------------------
+
+OUTPUT_DIR = Path("outputs/problem1_part2")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+kmeans_columns = [
+    "x1",
+    "x2",
+    "house_price",
+]
+
+kmeans_features = brisbane_data[kmeans_columns]
+
+# Standardise the variables so house price does not dominate the Euclidean
+# distance calculation simply because it has a larger numerical scale.
+kmeans_scaler = StandardScaler()
+
+scaled_kmeans_features = kmeans_scaler.fit_transform(
+    kmeans_features
+)
+
+kmeans_model = KMeans(
+    n_clusters=5,
+    random_state=42,
+    n_init=10,
+)
+
+cluster_labels = kmeans_model.fit_predict(
+    scaled_kmeans_features
+)
+
+print("\nK-means cluster counts:")
+print(
+    pd.Series(cluster_labels)
+    .value_counts()
+    .sort_index()
+)
+
+
+# ---------------------------------------------------------------------------
+# K-means Visualisation
+# ---------------------------------------------------------------------------
+
+plt.figure(figsize=(10, 8))
+
+markers = ["o", "^", "s", "D", "X"]
+
+for cluster_id in range(5):
+    cluster_mask = cluster_labels == cluster_id
+
+    scatter = plt.scatter(
+        brisbane_data.loc[cluster_mask, "x1"],
+        brisbane_data.loc[cluster_mask, "x2"],
+        c=brisbane_data.loc[
+            cluster_mask,
+            "house_price",
+        ],
+        cmap="viridis",
+        vmin=brisbane_data["house_price"].min(),
+        vmax=brisbane_data["house_price"].max(),
+        marker=markers[cluster_id],
+        s=35,
+        alpha=0.7,
+        label=f"Cluster {cluster_id}",
+    )
+
+plt.axhline(
+    y=0,
+    linewidth=0.8,
+)
+
+plt.axvline(
+    x=0,
+    linewidth=0.8,
+)
+
+plt.xlabel("East/West Distance from Brisbane CBD (km)")
+plt.ylabel("North/South Distance from Brisbane CBD (km)")
+
+plt.title(
+    "Brisbane House Price K-means Clustering"
+)
+
+colorbar = plt.colorbar(scatter)
+colorbar.set_label("House Price ($)")
+
+plt.legend(
+    title="K-means Cluster"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    OUTPUT_DIR / "brisbane_kmeans_clusters.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
