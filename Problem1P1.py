@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
 
 
 DATA_FILE = "data/CaliforniaHousing.csv"
@@ -249,3 +250,44 @@ print(pd.Series(clusters_4).value_counts().sort_index())
 
 print("\nK-means cluster counts - 5 clusters:")
 print(pd.Series(clusters_5).value_counts().sort_index())
+
+
+# ---------------------------------------------------------------------------
+# Neural Network Data Preparation
+# ---------------------------------------------------------------------------
+
+# Predictor variables used to estimate the median house value.
+model_features = [
+    "longitude",
+    "latitude",
+    "housing_median_age",
+    "total_rooms",
+    "total_bedrooms",
+    "population",
+    "households",
+    "median_income",
+]
+
+X = housing_clean[model_features]
+y = housing_clean["median_house_value"]
+
+# Reserve 20% of the data for final model evaluation.
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.20,
+    random_state=42,
+)
+
+# Fit the scaler using training data only to avoid test-data leakage.
+model_scaler = StandardScaler()
+
+X_train_scaled = model_scaler.fit_transform(X_train)
+X_test_scaled = model_scaler.transform(X_test)
+
+print("\nNeural network data preparation:")
+print(f"Training samples: {len(X_train)}")
+print(f"Testing samples: {len(X_test)}")
+print(f"Number of input features: {X_train.shape[1]}")
+
+scaler.fit_transform(X)
