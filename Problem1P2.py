@@ -18,7 +18,8 @@ from sklearn.model_selection import train_test_split
 
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam, SGD
+
 
 from pathlib import Path
 
@@ -1015,3 +1016,806 @@ print(
         },
     )
 )
+
+# ---------------------------------------------------------------------------
+# Neural Network Experiment Utilities
+# ---------------------------------------------------------------------------
+
+def build_brisbane_regression_model(
+    hidden_layers,
+    learning_rate,
+    optimizer_name,
+):
+    """Build and compile a configurable DNN for Brisbane price regression."""
+
+    # Clear the previous Keras model before creating the next experiment.
+    tf.keras.backend.clear_session()
+
+    # Use a fixed seed so experiment results are reproducible.
+    tf.keras.utils.set_random_seed(42)
+
+    model = Sequential()
+
+    model.add(
+        Input(
+            shape=(
+                X_train_scaled.shape[1],
+            )
+        )
+    )
+
+    # Add the requested hidden-layer architecture.
+    for neurons in hidden_layers:
+        model.add(
+            Dense(
+                neurons,
+                activation="relu",
+            )
+        )
+
+    # Regression requires one continuous output value.
+    model.add(
+        Dense(1)
+    )
+
+    if optimizer_name == "adam":
+        optimizer = Adam(
+            learning_rate=learning_rate
+        )
+
+    elif optimizer_name == "sgd":
+        optimizer = SGD(
+            learning_rate=learning_rate
+        )
+
+    else:
+        raise ValueError(
+            f"Unsupported optimizer: {optimizer_name}"
+        )
+
+    model.compile(
+        optimizer=optimizer,
+        loss="mse",
+        metrics=["mae"],
+    )
+
+    return model
+
+
+def run_brisbane_experiment(
+    name,
+    hidden_layers,
+    batch_size,
+    epochs,
+    learning_rate,
+    optimizer_name,
+):
+    """Train and evaluate one Brisbane neural-network configuration."""
+
+    print(
+        f"\nRunning experiment: {name}"
+    )
+
+    model = build_brisbane_regression_model(
+        hidden_layers=hidden_layers,
+        learning_rate=learning_rate,
+        optimizer_name=optimizer_name,
+    )
+
+    history = model.fit(
+        X_train_scaled,
+        y_train_scaled,
+        validation_split=0.20,
+        epochs=epochs,
+        batch_size=batch_size,
+        verbose=0,
+    )
+
+    # Validation metrics are stored in scaled target units.
+    # Convert them back to dollar-based values for reporting.
+    validation_mse = (
+        history.history["val_loss"][-1]
+        * TARGET_SCALE**2
+    )
+
+    validation_mae = (
+        history.history["val_mae"][-1]
+        * TARGET_SCALE
+    )
+
+    # Convert model predictions back into dollars.
+    predictions = (
+        model.predict(
+            X_test_scaled,
+            verbose=0,
+        ).reshape(-1)
+        * TARGET_SCALE
+    )
+
+    test_mse = mean_squared_error(
+        y_test,
+        predictions,
+    )
+
+    test_mae = mean_absolute_error(
+        y_test,
+        predictions,
+    )
+
+    test_r2 = r2_score(
+        y_test,
+        predictions,
+    )
+
+    print(
+        f"{name}: "
+        f"MSE={test_mse:,.2f}, "
+        f"MAE=${test_mae:,.2f}, "
+        f"R2={test_r2:.4f}"
+    )
+
+    return {
+        "Experiment": name,
+        "Hidden Layers": len(hidden_layers),
+        "Neurons": "-".join(
+            map(
+                str,
+                hidden_layers,
+            )
+        ),
+        "Batch Size": batch_size,
+        "Epochs": epochs,
+        "Learning Rate": learning_rate,
+        "Optimizer": optimizer_name.upper(),
+        "Validation MSE": validation_mse,
+        "Validation MAE": validation_mae,
+        "Test MSE": test_mse,
+        "Test MAE": test_mae,
+        "Test R2": test_r2,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Controlled Neural Network Experiments
+# ---------------------------------------------------------------------------
+
+# Include the existing baseline as the reference configuration.
+experiment_results = [
+    {
+        "Experiment": "Baseline",
+        "Hidden Layers": 2,
+        "Neurons": "32-16",
+        "Batch Size": 64,
+        "Epochs": 100,
+        "Learning Rate": 0.001,
+        "Optimizer": "ADAM",
+
+        "Validation MSE": (
+            baseline_history.history["val_loss"][-1]
+            * TARGET_SCALE**2
+        ),
+
+        "Validation MAE": (
+            baseline_history.history["val_mae"][-1]
+            * TARGET_SCALE
+        ),
+
+        "Test MSE": baseline_mse,
+        "Test MAE": baseline_mae,
+        "Test R2": baseline_r2,
+    }
+]
+
+
+experiment_configs = [
+    # -----------------------------------------------------------------------
+    # Hidden-layer experiments
+    # -----------------------------------------------------------------------
+    {
+        "name": "1 Hidden Layer",
+        "hidden_layers": [32],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+    {
+        "name": "3 Hidden Layers",
+        "hidden_layers": [50, 32, 16],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+    {
+        "name": "4 Hidden Layers",
+        "hidden_layers": [50, 40, 30, 20],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+    {
+        "name": "5 Hidden Layers",
+        "hidden_layers": [50, 40, 30, 20, 10],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+
+    # -----------------------------------------------------------------------
+    # Batch-size experiment
+    # -----------------------------------------------------------------------
+    {
+        "name": "Batch Size 128",
+        "hidden_layers": [32, 16],
+        "batch_size": 128,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+
+    # -----------------------------------------------------------------------
+    # Epoch experiments
+    # -----------------------------------------------------------------------
+    {
+        "name": "200 Epochs",
+        "hidden_layers": [32, 16],
+        "batch_size": 64,
+        "epochs": 200,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+    {
+        "name": "400 Epochs",
+        "hidden_layers": [32, 16],
+        "batch_size": 64,
+        "epochs": 400,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+
+    # -----------------------------------------------------------------------
+    # Learning-rate experiments
+    # -----------------------------------------------------------------------
+    {
+        "name": "Learning Rate 0.0005",
+        "hidden_layers": [32, 16],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.0005,
+        "optimizer_name": "adam",
+    },
+    {
+        "name": "Learning Rate 0.0001",
+        "hidden_layers": [32, 16],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.0001,
+        "optimizer_name": "adam",
+    },
+
+    # -----------------------------------------------------------------------
+    # Optimizer experiment
+    # -----------------------------------------------------------------------
+    {
+        "name": "SGD Optimizer",
+        "hidden_layers": [32, 16],
+        "batch_size": 64,
+        "epochs": 100,
+
+        # Use the same learning rate as the Adam 0.0001 experiment so the
+        # optimizer itself is the main controlled difference.
+        "learning_rate": 0.0001,
+        "optimizer_name": "sgd",
+    },
+
+    # -----------------------------------------------------------------------
+    # Neuron-count experiments
+    # -----------------------------------------------------------------------
+    {
+        "name": "10 Neurons Per Layer",
+        "hidden_layers": [10, 10],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+    {
+        "name": "50 Neurons Per Layer",
+        "hidden_layers": [50, 50],
+        "batch_size": 64,
+        "epochs": 100,
+        "learning_rate": 0.001,
+        "optimizer_name": "adam",
+    },
+]
+
+
+# Run every controlled experiment.
+for config in experiment_configs:
+    result = run_brisbane_experiment(
+        **config
+    )
+
+    experiment_results.append(
+        result
+    )
+
+
+# ---------------------------------------------------------------------------
+# Experiment Results Table
+# ---------------------------------------------------------------------------
+
+experiment_results_df = pd.DataFrame(
+    experiment_results
+)
+
+print(
+    "\nBrisbane neural network experiment results:"
+)
+
+print(
+    experiment_results_df.to_string(
+        index=False,
+        float_format=lambda value: (
+            f"{value:,.4f}"
+        ),
+    )
+)
+
+
+# Save the results for the technical report.
+experiment_results_df.to_csv(
+    OUTPUT_DIR
+    / "brisbane_dnn_experiment_results.csv",
+    index=False,
+)
+
+
+# ---------------------------------------------------------------------------
+# Final Selected Brisbane Neural Network Model
+# ---------------------------------------------------------------------------
+
+print(
+    "\n--- Final Selected Brisbane Neural Network Model ---"
+)
+
+# The final configuration is selected using validation MSE from the
+# controlled experiments. The 32-16 architecture trained for 400 epochs
+# achieved the lowest validation MSE among the tested configurations.
+final_model = build_brisbane_regression_model(
+    hidden_layers=[32, 16],
+    learning_rate=0.001,
+    optimizer_name="adam",
+)
+
+print(
+    "\nFinal Brisbane model architecture:"
+)
+
+final_model.summary()
+
+
+final_history = final_model.fit(
+    X_train_scaled,
+    y_train_scaled,
+    validation_split=0.20,
+    epochs=400,
+    batch_size=64,
+    verbose=1,
+)
+
+
+# ---------------------------------------------------------------------------
+# Final Model Evaluation
+# ---------------------------------------------------------------------------
+
+# Convert scaled model predictions back into Australian dollar values.
+final_predictions = (
+    final_model.predict(
+        X_test_scaled,
+        verbose=0,
+    ).reshape(-1)
+    * TARGET_SCALE
+)
+
+
+final_mse = mean_squared_error(
+    y_test,
+    final_predictions,
+)
+
+final_mae = mean_absolute_error(
+    y_test,
+    final_predictions,
+)
+
+final_r2 = r2_score(
+    y_test,
+    final_predictions,
+)
+
+
+print(
+    "\nFinal Brisbane model test results:"
+)
+
+print(
+    f"MSE: {final_mse:,.2f}"
+)
+
+print(
+    f"MAE: ${final_mae:,.2f}"
+)
+
+print(
+    f"R2: {final_r2:.4f}"
+)
+
+
+
+# ---------------------------------------------------------------------------
+# Final Model Training Curves
+# ---------------------------------------------------------------------------
+
+final_epochs = range(
+    1,
+    len(final_history.history["loss"]) + 1,
+)
+
+
+# Convert scaled metrics back into dollar-based units.
+final_training_mse = [
+    value * TARGET_SCALE**2
+    for value in final_history.history["loss"]
+]
+
+final_validation_mse = [
+    value * TARGET_SCALE**2
+    for value in final_history.history["val_loss"]
+]
+
+final_training_mae = [
+    value * TARGET_SCALE
+    for value in final_history.history["mae"]
+]
+
+final_validation_mae = [
+    value * TARGET_SCALE
+    for value in final_history.history["val_mae"]
+]
+
+
+# Final MSE curve.
+plt.figure(figsize=(9, 6))
+
+plt.plot(
+    final_epochs,
+    final_training_mse,
+    label="Training MSE",
+)
+
+plt.plot(
+    final_epochs,
+    final_validation_mse,
+    label="Validation MSE",
+)
+
+plt.xlabel("Epoch")
+plt.ylabel("Mean Squared Error")
+
+plt.title(
+    "Brisbane Final DNN - MSE Training Curve"
+)
+
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    OUTPUT_DIR / "final_mse_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# Final MAE curve.
+plt.figure(figsize=(9, 6))
+
+plt.plot(
+    final_epochs,
+    final_training_mae,
+    label="Training MAE",
+)
+
+plt.plot(
+    final_epochs,
+    final_validation_mae,
+    label="Validation MAE",
+)
+
+plt.xlabel("Epoch")
+plt.ylabel("Mean Absolute Error ($)")
+
+plt.title(
+    "Brisbane Final DNN - MAE Training Curve"
+)
+
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    OUTPUT_DIR / "final_mae_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Final Actual vs Predicted Brisbane House Prices
+# ---------------------------------------------------------------------------
+
+plt.figure(figsize=(8, 8))
+
+plt.scatter(
+    y_test,
+    final_predictions,
+    alpha=0.5,
+    s=25,
+)
+
+
+minimum_value = min(
+    y_test.min(),
+    final_predictions.min(),
+)
+
+maximum_value = max(
+    y_test.max(),
+    final_predictions.max(),
+)
+
+
+plt.plot(
+    [minimum_value, maximum_value],
+    [minimum_value, maximum_value],
+    linestyle="--",
+    label="Perfect prediction",
+)
+
+plt.xlabel(
+    "Actual Brisbane House Price ($)"
+)
+
+plt.ylabel(
+    "Predicted Brisbane House Price ($)"
+)
+
+plt.title(
+    "Brisbane Final DNN - Actual vs Predicted Prices"
+)
+
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    OUTPUT_DIR / "final_actual_vs_predicted.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Final Prediction Examples
+# ---------------------------------------------------------------------------
+
+final_prediction_results = pd.DataFrame(
+    {
+        "Actual House Price":
+            y_test.reset_index(drop=True),
+
+        "Predicted House Price":
+            final_predictions,
+    }
+)
+
+
+final_prediction_examples = (
+    final_prediction_results.sample(
+        n=10,
+        random_state=42,
+    )
+)
+
+
+print(
+    "\n10 example predictions from the final Brisbane model:"
+)
+
+print(
+    final_prediction_examples.to_string(
+        index=False,
+        formatters={
+            "Actual House Price":
+                lambda value: f"${value:,.2f}",
+
+            "Predicted House Price":
+                lambda value: f"${value:,.2f}",
+        },
+    )
+)
+
+
+final_prediction_examples.to_csv(
+    OUTPUT_DIR / "final_prediction_examples.csv",
+    index=False,
+)
+
+
+# ---------------------------------------------------------------------------
+# Interactive House Price Prediction
+# ---------------------------------------------------------------------------
+
+def predict_user_house_price():
+    """Collect property features and predict a Brisbane house price."""
+
+    print(
+        "\n--- Brisbane House Price Predictor ---"
+    )
+
+    print(
+        "\nEnter the property information below."
+    )
+
+    print(
+        "For property type: "
+        "0 = Apartment, "
+        "1 = Townhouse, "
+        "2 = Detached House"
+    )
+
+
+    try:
+        user_values = [
+            float(
+                input(
+                    "x1 - East/West distance from CBD (km): "
+                )
+            ),
+
+            float(
+                input(
+                    "x2 - North/South distance from CBD (km): "
+                )
+            ),
+
+            float(
+                input(
+                    "x3 - Property type (0, 1, or 2): "
+                )
+            ),
+
+            float(
+                input(
+                    "x4 - Internal floor area (m²): "
+                )
+            ),
+
+            float(
+                input(
+                    "x5 - Number of bathrooms: "
+                )
+            ),
+
+            float(
+                input(
+                    "x6 - Number of car spaces: "
+                )
+            ),
+
+            float(
+                input(
+                    "x7 - Public transport accessibility (0-10): "
+                )
+            ),
+
+            float(
+                input(
+                    "x8 - Flood-risk score (0-10): "
+                )
+            ),
+
+            float(
+                input(
+                    "x9 - Shopping accessibility (0-10): "
+                )
+            ),
+
+            float(
+                input(
+                    "x10 - Annual body-corporate fee ($): "
+                )
+            ),
+
+            float(
+                input(
+                    "x11 - Solar capacity (kW): "
+                )
+            ),
+
+            float(
+                input(
+                    "x12 - Private outdoor area (m²): "
+                )
+            ),
+
+            float(
+                input(
+                    "x13 - Walkability score (0-10): "
+                )
+            ),
+        ]
+
+    except ValueError:
+        print(
+            "\nInvalid input. "
+            "Please enter numeric values only."
+        )
+
+        return
+
+
+    # Preserve the same feature order used during model training.
+    user_property = pd.DataFrame(
+        [user_values],
+        columns=feature_columns,
+    )
+
+
+    # Apply the scaler fitted only on the training dataset.
+    user_property_scaled = (
+        nn_scaler.transform(
+            user_property
+        )
+    )
+
+
+    # Convert the scaled network output back into dollars.
+    predicted_price = (
+        final_model.predict(
+            user_property_scaled,
+            verbose=0,
+        ).reshape(-1)[0]
+        * TARGET_SCALE
+    )
+
+
+    print(
+        "\nPredicted Brisbane house price:"
+    )
+
+    print(
+        f"${predicted_price:,.2f}"
+    )
+
+
+# Ask whether the user wants to make an interactive prediction.
+prediction_choice = input(
+    "\nWould you like to predict a Brisbane house price? (y/n): "
+).strip().lower()
+
+
+if prediction_choice == "y":
+    predict_user_house_price()
+
+else:
+    print(
+        "\nInteractive prediction skipped."
+    )
