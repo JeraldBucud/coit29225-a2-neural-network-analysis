@@ -6,19 +6,23 @@ Olive Oil Neural Network Classification.
 
 This program:
 - Loads and inspects the supplied olive oil dataset.
-- Corrects the malformed CSV header by assigning explicit column names.
+- Corrects the malformed CSV header using explicit column names.
 - Extracts the eight required fatty-acid features.
-- Creates the two-class olive oil target from locality information.
-- Checks the dataset for missing and duplicate records.
-- Examines the class imbalance before synthetic sample generation.
+- Creates two olive-oil classes from locality information.
 - Generates 50 additional Organic Extra Virgin samples using a
   Gaussian Mixture Model (GMM).
-- Creates an augmented olive oil classification dataset.
+- Creates the complete augmented classification dataset.
 - Performs Principal Component Analysis (PCA).
-- Visualises the first two principal components by olive oil class.
-- Visualises the oleic fatty-acid distribution for the two classes.
-- Saves generated datasets and report-ready visualisations.
-- Prepares the analysis for later neural network classification.
+- Visualises the first two principal components for the two classes.
+- Visualises the oleic fatty-acid distribution by class.
+- Splits the augmented dataset into training, validation, and test sets.
+- Trains and evaluates a baseline deep neural network classifier.
+- Performs controlled neural-network parameter experiments.
+- Selects the final classifier using validation performance.
+- Evaluates the selected classifier on the test dataset.
+- Reports training accuracy, test accuracy, precision, recall,
+  F1-score, and support.
+- Generates report-ready figures and CSV output files.
 """
 
 from pathlib import Path
@@ -68,9 +72,9 @@ NUMBER_OF_SYNTHETIC_SAMPLES = 50
 # Dataset Loading
 # ---------------------------------------------------------------------------
 
-# The supplied CSV header contains one fewer field than the data rows.
-# Explicit column names are assigned so Pandas does not shift the values
-# into incorrect columns.
+# The supplied CSV contains one fewer header field than the number of values
+# contained in each data row. Explicit column names are therefore assigned
+# so that the values are read into the correct fields.
 
 column_names = [
     "sample_id",
@@ -161,17 +165,13 @@ print(
 print(
     olive_data[
         "locality"
-    ]
-    .value_counts()
+    ].value_counts()
 )
 
 
 # ---------------------------------------------------------------------------
 # Feature Selection
 # ---------------------------------------------------------------------------
-
-# The assignment requires the eight fatty-acid variables to be used as
-# predictor features.
 
 feature_columns = [
     "palmitic",
@@ -189,13 +189,11 @@ feature_columns = [
 # Target-Class Creation
 # ---------------------------------------------------------------------------
 
-# According to the assignment specification:
-#
 # Calabria and Sicily:
-#   Organic Extra Virgin Olive Oil
+#   Organic Extra Virgin
 #
-# All other localities:
-#   Extra Virgin Olive Oil
+# All remaining localities:
+#   Extra Virgin
 
 organic_localities = [
     "Calabria",
@@ -214,18 +212,15 @@ olive_data[
     )
     .map(
         {
-            False:
-                "Extra Virgin",
-
-            True:
-                "Organic Extra Virgin",
+            False: "Extra Virgin",
+            True: "Organic Extra Virgin",
         }
     )
 )
 
 
 # ---------------------------------------------------------------------------
-# Final Classification Dataset
+# Classification Dataset
 # ---------------------------------------------------------------------------
 
 classification_data = olive_data[
@@ -261,8 +256,7 @@ print(
 print(
     classification_data[
         "oil_class"
-    ]
-    .value_counts()
+    ].value_counts()
 )
 
 
@@ -293,8 +287,7 @@ print(
 print(
     classification_data[
         feature_columns
-    ]
-    .describe()
+    ].describe()
 )
 
 
@@ -302,11 +295,9 @@ print(
 # Gaussian Mixture Model Minority-Class Augmentation
 # ---------------------------------------------------------------------------
 
-# The Organic Extra Virgin class contains samples from Calabria and Sicily
-# and is considerably smaller than the Extra Virgin class.
-#
-# The assignment requires 50 additional minority-class samples to be
-# generated using a Gaussian Mixture Model.
+# The Organic Extra Virgin class is the minority class.
+# The assignment requires exactly 50 additional samples to be generated
+# using a Gaussian Mixture Model.
 
 organic_data = classification_data[
     classification_data[
@@ -318,16 +309,11 @@ organic_data = classification_data[
 
 organic_features = organic_data[
     feature_columns
-]
+].copy()
 
 
-# ---------------------------------------------------------------------------
-# Standardise Minority-Class Features
-# ---------------------------------------------------------------------------
-
-# The eight fatty-acid variables operate on different numerical scales.
-# Standardisation prevents variables with larger values from dominating
-# the Gaussian mixture fitting process.
+# Standardise before fitting the GMM because the fatty-acid variables have
+# different numerical ranges.
 
 gmm_scaler = StandardScaler()
 
@@ -338,12 +324,8 @@ organic_features_scaled = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fit Gaussian Mixture Model
-# ---------------------------------------------------------------------------
-
-# Two mixture components are used because the Organic Extra Virgin class
-# originates from two localities: Calabria and Sicily.
+# Two Gaussian components are used because the minority class contains
+# observations originating from Calabria and Sicily.
 
 gmm_model = GaussianMixture(
     n_components=2,
@@ -356,19 +338,14 @@ gmm_model.fit(
 )
 
 
-# ---------------------------------------------------------------------------
-# Generate Synthetic Minority-Class Samples
-# ---------------------------------------------------------------------------
+# Generate exactly 50 synthetic minority-class observations.
 
-synthetic_scaled, synthetic_components = (
+synthetic_scaled, _ = (
     gmm_model.sample(
         NUMBER_OF_SYNTHETIC_SAMPLES
     )
 )
 
-
-# Convert generated observations from standardised values back to the
-# original fatty-acid measurement scale.
 
 synthetic_features = (
     gmm_scaler.inverse_transform(
@@ -381,11 +358,9 @@ synthetic_features = (
 # Synthetic Sample Range Control
 # ---------------------------------------------------------------------------
 
-# Gaussian distributions can occasionally generate observations outside the
-# range seen in the original minority class.
-#
-# Each synthetic feature is therefore restricted to the observed minimum
-# and maximum values of the Organic Extra Virgin class.
+# Gaussian distributions can generate observations outside the original
+# observed range. Restrict each generated feature to the range found in the
+# original Organic Extra Virgin data.
 
 organic_minimums = (
     organic_features
@@ -407,8 +382,7 @@ synthetic_features = np.clip(
 )
 
 
-# The supplied olive dataset stores fatty-acid measurements as integers.
-# Round the generated observations so they follow the same representation.
+# The supplied dataset stores fatty-acid measurements as integers.
 
 synthetic_features = (
     np.rint(
@@ -421,7 +395,7 @@ synthetic_features = (
 
 
 # ---------------------------------------------------------------------------
-# Create Synthetic Classification Records
+# Synthetic Dataset
 # ---------------------------------------------------------------------------
 
 synthetic_data = pd.DataFrame(
@@ -456,8 +430,12 @@ print(
 
 
 # ---------------------------------------------------------------------------
-# Create Augmented Dataset
+# Complete Augmented Dataset
 # ---------------------------------------------------------------------------
+
+# The assignment requires the 50 generated observations to be added to the
+# dataset for training and testing purposes. The augmented dataset therefore
+# becomes the dataset subsequently split for neural-network experiments.
 
 augmented_data = pd.concat(
     [
@@ -484,8 +462,7 @@ print(
 print(
     augmented_data[
         "oil_class"
-    ]
-    .value_counts()
+    ].value_counts()
 )
 
 
@@ -509,10 +486,6 @@ print(
 )
 
 
-# ---------------------------------------------------------------------------
-# Verify Augmented Dataset
-# ---------------------------------------------------------------------------
-
 print(
     "\nMissing values after GMM augmentation:"
 )
@@ -529,12 +502,9 @@ print(
 print(
     synthetic_data[
         feature_columns
-    ]
-    .describe()
+    ].describe()
 )
 
-
-# Save the augmented dataset for inspection and report evidence.
 
 augmented_data.to_csv(
     OUTPUT_DIR
@@ -547,8 +517,7 @@ augmented_data.to_csv(
 # PCA Analysis
 # ---------------------------------------------------------------------------
 
-# Standardise all eight fatty-acid variables before PCA so variables with
-# larger measurement ranges do not dominate the principal components.
+# Standardise all eight fatty-acid measurements before PCA.
 
 pca_scaler = StandardScaler()
 
@@ -561,11 +530,10 @@ pca_features_scaled = (
 )
 
 
-# Retain the first two principal components for the required 2D plot.
-
 pca_model = PCA(
     n_components=2
 )
+
 
 pca_components = (
     pca_model.fit_transform(
@@ -598,10 +566,6 @@ pca_results = pd.DataFrame(
     }
 )
 
-
-# ---------------------------------------------------------------------------
-# PCA Explained Variance
-# ---------------------------------------------------------------------------
 
 pc1_variance = (
     pca_model
@@ -738,18 +702,15 @@ organic_oleic = (
 )
 
 
-# Use common histogram boundaries for both classes so their oleic
-# distributions can be compared directly.
+# Use common histogram boundaries so both classes are directly comparable.
 
 oleic_bins = np.linspace(
     augmented_data[
         "oleic"
-    ]
-    .min(),
+    ].min(),
     augmented_data[
         "oleic"
-    ]
-    .max(),
+    ].max(),
     21,
 )
 
@@ -765,7 +726,7 @@ plt.figure(
 plt.hist(
     extra_virgin_oleic,
     bins=oleic_bins,
-    alpha=0.5,
+    alpha=0.50,
     density=True,
     label="Extra Virgin",
 )
@@ -774,9 +735,28 @@ plt.hist(
 plt.hist(
     organic_oleic,
     bins=oleic_bins,
-    alpha=0.5,
+    alpha=0.50,
     density=True,
     label="Organic Extra Virgin",
+)
+
+
+# Add outline curves to make the class distributions easier to compare.
+
+plt.hist(
+    extra_virgin_oleic,
+    bins=oleic_bins,
+    density=True,
+    histtype="step",
+    linewidth=2,
+)
+
+plt.hist(
+    organic_oleic,
+    bins=oleic_bins,
+    density=True,
+    histtype="step",
+    linewidth=2,
 )
 
 
@@ -809,12 +789,8 @@ plt.savefig(
 plt.close()
 
 
-# ---------------------------------------------------------------------------
-# Output Summary
-# ---------------------------------------------------------------------------
-
 print(
-    "\nGenerated Problem 2 outputs:"
+    "\nGenerated data-analysis outputs:"
 )
 
 print(
@@ -834,10 +810,10 @@ print(
 
 
 # ---------------------------------------------------------------------------
-# Leakage-Safe Neural Network Data Preparation
+# Neural Network Data Preparation
 # ---------------------------------------------------------------------------
 
-# Encode the two classes numerically:
+# Binary target encoding:
 #
 # 0 = Extra Virgin
 # 1 = Organic Extra Virgin
@@ -847,9 +823,11 @@ class_mapping = {
     "Organic Extra Virgin": 1,
 }
 
+
 classification_model_data = (
-    classification_data.copy()
+    augmented_data.copy()
 )
+
 
 classification_model_data[
     "target"
@@ -863,41 +841,41 @@ classification_model_data[
 )
 
 
-X_original = classification_model_data[
+X_all = classification_model_data[
     feature_columns
 ]
 
-y_original = classification_model_data[
+y_all = classification_model_data[
     "target"
 ]
 
 
 # ---------------------------------------------------------------------------
-# Original Train / Validation / Test Split
+# Train / Validation / Test Split
 # ---------------------------------------------------------------------------
 
-# First reserve 20% of the original observations as the untouched test set.
+# Reserve 20% of the complete augmented dataset for testing.
 
 X_train_validation, X_test, y_train_validation, y_test = (
     train_test_split(
-        X_original,
-        y_original,
+        X_all,
+        y_all,
         test_size=0.20,
         random_state=RANDOM_SEED,
-        stratify=y_original,
+        stratify=y_all,
     )
 )
 
 
-# Split the remaining original observations into training and validation sets.
+# Use 20% of the remaining data as validation data.
 #
-# 20% of the remaining 80% becomes validation data, producing approximately:
+# Approximate total proportions:
 #
 # 64% training
 # 16% validation
-# 20% test
+# 20% testing
 
-X_train_original, X_validation, y_train_original, y_validation = (
+X_train_augmented, X_validation, y_train_augmented, y_validation = (
     train_test_split(
         X_train_validation,
         y_train_validation,
@@ -909,12 +887,12 @@ X_train_original, X_validation, y_train_original, y_validation = (
 
 
 print(
-    "\nNeural network original-data split:"
+    "\nNeural network augmented-data split:"
 )
 
 print(
-    f"Training samples before GMM augmentation: "
-    f"{len(X_train_original)}"
+    f"Training samples: "
+    f"{len(X_train_augmented)}"
 )
 
 print(
@@ -929,197 +907,7 @@ print(
 
 
 print(
-    "\nOriginal training class distribution:"
-)
-
-print(
-    y_train_original.value_counts().sort_index()
-)
-
-
-print(
-    "\nValidation class distribution:"
-)
-
-print(
-    y_validation.value_counts().sort_index()
-)
-
-
-print(
-    "\nTest class distribution:"
-)
-
-print(
-    y_test.value_counts().sort_index()
-)
-
-
-# ---------------------------------------------------------------------------
-# Training-Only GMM Augmentation
-# ---------------------------------------------------------------------------
-
-# Extract only Organic Extra Virgin observations from the original training
-# partition. The validation and test observations are not used when fitting
-# this GMM.
-
-organic_training_features = X_train_original[
-    y_train_original == 1
-].copy()
-
-
-training_gmm_scaler = StandardScaler()
-
-organic_training_scaled = (
-    training_gmm_scaler.fit_transform(
-        organic_training_features
-    )
-)
-
-
-training_gmm_model = GaussianMixture(
-    n_components=2,
-    covariance_type="full",
-    random_state=RANDOM_SEED,
-)
-
-training_gmm_model.fit(
-    organic_training_scaled
-)
-
-
-synthetic_training_scaled, _ = (
-    training_gmm_model.sample(
-        NUMBER_OF_SYNTHETIC_SAMPLES
-    )
-)
-
-
-synthetic_training_features = (
-    training_gmm_scaler.inverse_transform(
-        synthetic_training_scaled
-    )
-)
-
-
-# Limit generated values to the range observed in the Organic training data.
-
-training_organic_minimums = (
-    organic_training_features
-    .min()
-    .to_numpy()
-)
-
-training_organic_maximums = (
-    organic_training_features
-    .max()
-    .to_numpy()
-)
-
-
-synthetic_training_features = np.clip(
-    synthetic_training_features,
-    training_organic_minimums,
-    training_organic_maximums,
-)
-
-
-synthetic_training_features = (
-    np.rint(
-        synthetic_training_features
-    )
-    .astype(
-        int
-    )
-)
-
-
-synthetic_training_df = pd.DataFrame(
-    synthetic_training_features,
-    columns=feature_columns,
-)
-
-
-synthetic_training_target = pd.Series(
-    np.ones(
-        NUMBER_OF_SYNTHETIC_SAMPLES,
-        dtype=int,
-    ),
-    name="target",
-)
-
-
-# ---------------------------------------------------------------------------
-# Augmented Training Dataset
-# ---------------------------------------------------------------------------
-
-X_train_augmented = pd.concat(
-    [
-        X_train_original.reset_index(
-            drop=True
-        ),
-        synthetic_training_df,
-    ],
-    ignore_index=True,
-)
-
-
-y_train_augmented = pd.concat(
-    [
-        y_train_original.reset_index(
-            drop=True
-        ),
-        synthetic_training_target,
-    ],
-    ignore_index=True,
-)
-
-
-# Shuffle the augmented training set reproducibly.
-
-training_shuffle = np.random.default_rng(
-    RANDOM_SEED
-).permutation(
-    len(
-        X_train_augmented
-    )
-)
-
-
-X_train_augmented = (
-    X_train_augmented
-    .iloc[
-        training_shuffle
-    ]
-    .reset_index(
-        drop=True
-    )
-)
-
-y_train_augmented = (
-    y_train_augmented
-    .iloc[
-        training_shuffle
-    ]
-    .reset_index(
-        drop=True
-    )
-)
-
-
-print(
-    "\nTraining samples after GMM augmentation:"
-)
-
-print(
-    len(
-        X_train_augmented
-    )
-)
-
-
-print(
-    "\nAugmented training class distribution:"
+    "\nTraining class distribution:"
 )
 
 print(
@@ -1129,13 +917,36 @@ print(
 )
 
 
+print(
+    "\nValidation class distribution:"
+)
+
+print(
+    y_validation
+    .value_counts()
+    .sort_index()
+)
+
+
+print(
+    "\nTest class distribution:"
+)
+
+print(
+    y_test
+    .value_counts()
+    .sort_index()
+)
+
+
 # ---------------------------------------------------------------------------
-# Neural Network Feature Scaling
+# Feature Scaling
 # ---------------------------------------------------------------------------
 
-# Fit the neural-network scaler only on the augmented training set.
+# Fit the neural-network scaler using only the training partition.
 
 nn_scaler = StandardScaler()
+
 
 X_train_scaled = (
     nn_scaler.fit_transform(
@@ -1143,11 +954,13 @@ X_train_scaled = (
     )
 )
 
+
 X_validation_scaled = (
     nn_scaler.transform(
         X_validation
     )
 )
+
 
 X_test_scaled = (
     nn_scaler.transform(
@@ -1164,44 +977,107 @@ print(
     X_train_scaled.shape[1]
 )
 
+
 # ---------------------------------------------------------------------------
-# Baseline Neural Network Classifier
+# Neural Network Utility Functions
 # ---------------------------------------------------------------------------
 
-tf.keras.utils.set_random_seed(
-    RANDOM_SEED
-)
+def build_olive_classifier(
+    hidden_layers,
+    learning_rate,
+    optimizer_name,
+):
+    """Build and compile a configurable olive oil classifier."""
 
-baseline_classifier = Sequential(
-    [
+    tf.keras.backend.clear_session()
+
+    tf.keras.utils.set_random_seed(
+        RANDOM_SEED
+    )
+
+
+    model = Sequential()
+
+    model.add(
         Input(
             shape=(
                 X_train_scaled.shape[1],
             )
-        ),
-        Dense(
-            32,
-            activation="relu",
-        ),
-        Dense(
-            16,
-            activation="relu",
-        ),
+        )
+    )
+
+
+    for neurons in hidden_layers:
+        model.add(
+            Dense(
+                neurons,
+                activation="relu",
+            )
+        )
+
+
+    model.add(
         Dense(
             1,
             activation="sigmoid",
-        ),
-    ]
-)
+        )
+    )
 
 
-baseline_classifier.compile(
-    optimizer=Adam(
-        learning_rate=0.001
-    ),
-    loss="binary_crossentropy",
-    metrics=[
-        "accuracy"
+    if optimizer_name == "adam":
+        optimizer = Adam(
+            learning_rate=learning_rate
+        )
+
+    elif optimizer_name == "sgd":
+        optimizer = SGD(
+            learning_rate=learning_rate
+        )
+
+    else:
+        raise ValueError(
+            f"Unsupported optimizer: "
+            f"{optimizer_name}"
+        )
+
+
+    model.compile(
+        optimizer=optimizer,
+        loss="binary_crossentropy",
+        metrics=[
+            "accuracy"
+        ],
+    )
+
+
+    return model
+
+
+# ---------------------------------------------------------------------------
+# Baseline Neural Network Classifier
+# ---------------------------------------------------------------------------
+
+baseline_config = {
+    "hidden_layers": [
+        32,
+        16,
+    ],
+    "batch_size": 64,
+    "epochs": 100,
+    "learning_rate": 0.001,
+    "optimizer_name": "adam",
+}
+
+
+baseline_classifier = build_olive_classifier(
+    hidden_layers=baseline_config[
+        "hidden_layers"
+    ],
+    learning_rate=baseline_config[
+        "learning_rate"
+    ],
+    optimizer_name=baseline_config[
+        "optimizer_name"
     ],
 )
 
@@ -1213,13 +1089,10 @@ print(
 baseline_classifier.summary()
 
 
-# ---------------------------------------------------------------------------
-# Baseline Classifier Training
-# ---------------------------------------------------------------------------
-
 print(
     "\nTraining baseline olive oil classifier..."
 )
+
 
 baseline_history = baseline_classifier.fit(
     X_train_scaled,
@@ -1228,14 +1101,18 @@ baseline_history = baseline_classifier.fit(
         X_validation_scaled,
         y_validation,
     ),
-    epochs=100,
-    batch_size=64,
+    epochs=baseline_config[
+        "epochs"
+    ],
+    batch_size=baseline_config[
+        "batch_size"
+    ],
     verbose=1,
 )
 
 
 # ---------------------------------------------------------------------------
-# Baseline Classifier Evaluation
+# Baseline Evaluation
 # ---------------------------------------------------------------------------
 
 baseline_training_probability = (
@@ -1245,6 +1122,7 @@ baseline_training_probability = (
     )
     .reshape(-1)
 )
+
 
 baseline_test_probability = (
     baseline_classifier.predict(
@@ -1262,6 +1140,7 @@ baseline_training_predictions = (
     int
 )
 
+
 baseline_test_predictions = (
     baseline_test_probability
     >= 0.5
@@ -1274,6 +1153,7 @@ baseline_training_accuracy = accuracy_score(
     y_train_augmented,
     baseline_training_predictions,
 )
+
 
 baseline_test_accuracy = accuracy_score(
     y_test,
@@ -1311,6 +1191,7 @@ baseline_report_text = classification_report(
     baseline_test_predictions,
     target_names=class_names,
     digits=4,
+    zero_division=0,
 )
 
 
@@ -1323,15 +1204,13 @@ print(
 )
 
 
-# Create a structured version of the classification report so the results
-# can be saved as a CSV file for the technical report.
-
 baseline_report_dict = classification_report(
     y_test,
     baseline_test_predictions,
     target_names=class_names,
     digits=4,
     output_dict=True,
+    zero_division=0,
 )
 
 
@@ -1346,8 +1225,9 @@ baseline_report_df.to_csv(
     index_label="Class",
 )
 
+
 # ---------------------------------------------------------------------------
-# Baseline Accuracy Training Curve
+# Baseline Training Curves
 # ---------------------------------------------------------------------------
 
 baseline_epochs = range(
@@ -1413,10 +1293,6 @@ plt.savefig(
 
 plt.close()
 
-
-# ---------------------------------------------------------------------------
-# Baseline Loss Training Curve
-# ---------------------------------------------------------------------------
 
 plt.figure(
     figsize=(
@@ -1490,80 +1366,10 @@ print(
     / "baseline_classification_report.csv"
 )
 
+
 # ---------------------------------------------------------------------------
-# Neural Network Experiment Utilities
+# Controlled Experiment Function
 # ---------------------------------------------------------------------------
-
-def build_olive_classifier(
-    hidden_layers,
-    learning_rate,
-    optimizer_name,
-):
-    """Build and compile a configurable olive oil DNN classifier."""
-
-    # Remove the previous Keras model before starting a new experiment.
-    tf.keras.backend.clear_session()
-
-    # Reset the seed so each experiment is reproducible.
-    tf.keras.utils.set_random_seed(
-        RANDOM_SEED
-    )
-
-    model = Sequential()
-
-    model.add(
-        Input(
-            shape=(
-                X_train_scaled.shape[1],
-            )
-        )
-    )
-
-    # Add the requested hidden-layer architecture.
-    for neurons in hidden_layers:
-        model.add(
-            Dense(
-                neurons,
-                activation="relu",
-            )
-        )
-
-    # Binary classification requires one sigmoid output neuron.
-    model.add(
-        Dense(
-            1,
-            activation="sigmoid",
-        )
-    )
-
-
-    if optimizer_name == "adam":
-        optimizer = Adam(
-            learning_rate=learning_rate
-        )
-
-    elif optimizer_name == "sgd":
-        optimizer = SGD(
-            learning_rate=learning_rate
-        )
-
-    else:
-        raise ValueError(
-            f"Unsupported optimizer: "
-            f"{optimizer_name}"
-        )
-
-
-    model.compile(
-        optimizer=optimizer,
-        loss="binary_crossentropy",
-        metrics=[
-            "accuracy"
-        ],
-    )
-
-    return model
-
 
 def run_olive_experiment(
     name,
@@ -1573,7 +1379,7 @@ def run_olive_experiment(
     learning_rate,
     optimizer_name,
 ):
-    """Train one controlled olive oil neural-network experiment."""
+    """Train one controlled neural-network experiment."""
 
     print(
         f"\nRunning experiment: "
@@ -1601,10 +1407,6 @@ def run_olive_experiment(
     )
 
 
-    # -----------------------------------------------------------------------
-    # Experiment Metrics
-    # -----------------------------------------------------------------------
-
     training_accuracy = (
         history.history[
             "accuracy"
@@ -1618,6 +1420,7 @@ def run_olive_experiment(
         ]
     )
 
+
     validation_accuracies = np.array(
         history.history[
             "val_accuracy"
@@ -1625,12 +1428,12 @@ def run_olive_experiment(
     )
 
 
-    # Find the epoch with the lowest validation loss.
     best_epoch_index = int(
         np.argmin(
             validation_losses
         )
     )
+
 
     best_epoch = (
         best_epoch_index
@@ -1719,10 +1522,8 @@ def run_olive_experiment(
 
 
 # ---------------------------------------------------------------------------
-# Controlled Neural Network Experiments
+# Baseline Experiment Record
 # ---------------------------------------------------------------------------
-
-# Add the baseline configuration as the reference experiment.
 
 baseline_validation_losses = np.array(
     baseline_history.history[
@@ -1730,11 +1531,13 @@ baseline_validation_losses = np.array(
     ]
 )
 
+
 baseline_validation_accuracies = np.array(
     baseline_history.history[
         "val_accuracy"
     ]
 )
+
 
 baseline_best_epoch_index = int(
     np.argmin(
@@ -1791,16 +1594,19 @@ experiment_results = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Controlled Experiment Configurations
+# ---------------------------------------------------------------------------
+
 experiment_configs = [
-    # -----------------------------------------------------------------------
-    # Hidden-layer experiments
-    # -----------------------------------------------------------------------
     {
         "name":
             "1 Hidden Layer",
 
         "hidden_layers":
-            [32],
+            [
+                32,
+            ],
 
         "batch_size":
             64,
@@ -1890,10 +1696,6 @@ experiment_configs = [
             "adam",
     },
 
-
-    # -----------------------------------------------------------------------
-    # Batch-size experiment
-    # -----------------------------------------------------------------------
     {
         "name":
             "Batch Size 128",
@@ -1917,10 +1719,6 @@ experiment_configs = [
             "adam",
     },
 
-
-    # -----------------------------------------------------------------------
-    # Epoch experiments
-    # -----------------------------------------------------------------------
     {
         "name":
             "200 Epochs",
@@ -1967,10 +1765,6 @@ experiment_configs = [
             "adam",
     },
 
-
-    # -----------------------------------------------------------------------
-    # Learning-rate experiments
-    # -----------------------------------------------------------------------
     {
         "name":
             "Learning Rate 0.0005",
@@ -2017,10 +1811,6 @@ experiment_configs = [
             "adam",
     },
 
-
-    # -----------------------------------------------------------------------
-    # Optimizer experiment
-    # -----------------------------------------------------------------------
     {
         "name":
             "SGD Optimizer",
@@ -2037,8 +1827,6 @@ experiment_configs = [
         "epochs":
             100,
 
-        # Keep the baseline learning rate so the optimizer is the primary
-        # controlled difference.
         "learning_rate":
             0.001,
 
@@ -2046,10 +1834,6 @@ experiment_configs = [
             "sgd",
     },
 
-
-    # -----------------------------------------------------------------------
-    # Neuron-count experiments
-    # -----------------------------------------------------------------------
     {
         "name":
             "10 Neurons Per Layer",
@@ -2099,6 +1883,45 @@ experiment_configs = [
 
 
 # ---------------------------------------------------------------------------
+# Configuration Lookup
+# ---------------------------------------------------------------------------
+
+# This allows the final selected model to be built dynamically rather than
+# hard-coding a particular experiment before the new experiment results are
+# known.
+
+experiment_config_lookup = {
+    "Baseline": {
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    }
+}
+
+
+for config in experiment_configs:
+    experiment_config_lookup[
+        config[
+            "name"
+        ]
+    ] = config
+
+
+# ---------------------------------------------------------------------------
 # Run Controlled Experiments
 # ---------------------------------------------------------------------------
 
@@ -2125,6 +1948,7 @@ print(
     "\nOlive oil neural network experiment results:"
 )
 
+
 print(
     experiment_results_df.to_string(
         index=False,
@@ -2143,11 +1967,10 @@ experiment_results_df.to_csv(
 
 
 # ---------------------------------------------------------------------------
-# Validation-Based Model Selection
+# Validation-Based Final Model Selection
 # ---------------------------------------------------------------------------
 
-# Select the model configuration using validation performance only.
-# The untouched test set is deliberately not used during this selection.
+# Select the final configuration using validation performance only.
 
 best_experiment_index = (
     experiment_results_df[
@@ -2156,9 +1979,31 @@ best_experiment_index = (
     .idxmin()
 )
 
+
 best_experiment = (
     experiment_results_df.loc[
         best_experiment_index
+    ]
+)
+
+
+best_experiment_name = (
+    best_experiment[
+        "Experiment"
+    ]
+)
+
+
+best_config = (
+    experiment_config_lookup[
+        best_experiment_name
+    ]
+)
+
+
+best_epoch = int(
+    best_experiment[
+        "Best Epoch"
     ]
 )
 
@@ -2173,6 +2018,41 @@ print(
 
 
 print(
+    "\nSelected final configuration:"
+)
+
+print(
+    f"Experiment: "
+    f"{best_experiment_name}"
+)
+
+print(
+    f"Hidden layers: "
+    f"{best_config['hidden_layers']}"
+)
+
+print(
+    f"Batch size: "
+    f"{best_config['batch_size']}"
+)
+
+print(
+    f"Learning rate: "
+    f"{best_config['learning_rate']}"
+)
+
+print(
+    f"Optimizer: "
+    f"{best_config['optimizer_name'].upper()}"
+)
+
+print(
+    f"Selected epochs: "
+    f"{best_epoch}"
+)
+
+
+print(
     "\nExperiment results saved to:"
 )
 
@@ -2183,7 +2063,7 @@ print(
 
 
 # ---------------------------------------------------------------------------
-# Final Selected Olive Oil Neural Network Classifier
+# Final Selected Neural Network Classifier
 # ---------------------------------------------------------------------------
 
 print(
@@ -2191,23 +2071,16 @@ print(
 )
 
 
-# The final configuration is selected using validation performance from the
-# controlled experiments.
-#
-# Best configuration:
-# - 1 hidden layer
-# - 32 neurons
-# - Adam optimizer
-# - learning rate = 0.001
-# - batch size = 64
-# - best validation-loss epoch = 81
-
 final_classifier = build_olive_classifier(
-    hidden_layers=[
-        32,
+    hidden_layers=best_config[
+        "hidden_layers"
     ],
-    learning_rate=0.001,
-    optimizer_name="adam",
+    learning_rate=best_config[
+        "learning_rate"
+    ],
+    optimizer_name=best_config[
+        "optimizer_name"
+    ],
 )
 
 
@@ -2229,8 +2102,10 @@ final_history = final_classifier.fit(
         X_validation_scaled,
         y_validation,
     ),
-    epochs=81,
-    batch_size=64,
+    epochs=best_epoch,
+    batch_size=best_config[
+        "batch_size"
+    ],
     verbose=1,
 )
 
@@ -2309,6 +2184,7 @@ final_report_text = classification_report(
     final_test_predictions,
     target_names=class_names,
     digits=4,
+    zero_division=0,
 )
 
 
@@ -2327,6 +2203,7 @@ final_report_dict = classification_report(
     target_names=class_names,
     digits=4,
     output_dict=True,
+    zero_division=0,
 )
 
 
@@ -2467,7 +2344,6 @@ plt.savefig(
 plt.close()
 
 
-
 # ---------------------------------------------------------------------------
 # Final Prediction Examples
 # ---------------------------------------------------------------------------
@@ -2494,13 +2370,14 @@ label_names = {
 }
 
 
-# Select five examples from each class so both classes are represented.
+# Select five examples from each actual class.
 
 extra_examples = (
     final_prediction_results[
         final_prediction_results[
             "Actual Label"
-        ] == 0
+        ]
+        == 0
     ]
     .sample(
         n=5,
@@ -2508,17 +2385,20 @@ extra_examples = (
     )
 )
 
+
 organic_examples = (
     final_prediction_results[
         final_prediction_results[
             "Actual Label"
-        ] == 1
+        ]
+        == 1
     ]
     .sample(
         n=5,
         random_state=RANDOM_SEED,
     )
 )
+
 
 final_prediction_examples = pd.concat(
     [
@@ -2557,6 +2437,7 @@ print(
     "\n10 example predictions from the final olive oil classifier:"
 )
 
+
 print(
     final_prediction_examples.to_string(
         index=False,
@@ -2577,8 +2458,47 @@ final_prediction_examples.to_csv(
 )
 
 
+# ---------------------------------------------------------------------------
+# Final Output Summary
+# ---------------------------------------------------------------------------
+
 print(
-    "\nGenerated final classifier outputs:"
+    "\nGenerated final Problem 2 outputs:"
+)
+
+print(
+    OUTPUT_DIR
+    / "olive_classification_augmented.csv"
+)
+
+print(
+    OUTPUT_DIR
+    / "olive_pca_two_classes.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "oleic_distribution_by_class.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "baseline_accuracy_curve.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "baseline_loss_curve.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "baseline_classification_report.csv"
+)
+
+print(
+    OUTPUT_DIR
+    / "olive_dnn_experiment_results.csv"
 )
 
 print(

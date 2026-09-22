@@ -1,11 +1,11 @@
 Actual Label,Predicted Label,Organic Probability
-Extra Virgin,Extra Virgin,0.0025718566
-Extra Virgin,Extra Virgin,0.000715689
-Extra Virgin,Extra Virgin,0.00088538206
-Extra Virgin,Organic Extra Virgin,0.74410444
-Extra Virgin,Extra Virgin,0.0016558012
-Organic Extra Virgin,Organic Extra Virgin,0.94390017
-Organic Extra Virgin,Organic Extra Virgin,0.83594096
-Organic Extra Virgin,Organic Extra Virgin,0.95469415
-Organic Extra Virgin,Organic Extra Virgin,0.7440381
-Organic Extra Virgin,Organic Extra Virgin,0.9887843
+Extra Virgin,Extra Virgin,6.856095e-06
+Extra Virgin,Extra Virgin,4.304875e-07
+Extra Virgin,Extra Virgin,1.6011375e-08
+Extra Virgin,Extra Virgin,3.5501869e-06
+Extra Virgin,Extra Virgin,5.4525553e-09
+Organic Extra Virgin,Organic Extra Virgin,0.8302835
+Organic Extra Virgin,Organic Extra Virgin,0.99326015
+Organic Extra Virgin,Organic Extra Virgin,0.9999864
+Organic Extra Virgin,Organic Extra Virgin,0.96518606
+Organic Extra Virgin,Organic Extra Virgin,0.9846158
