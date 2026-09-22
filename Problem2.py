@@ -21,27 +21,25 @@ This program:
 - Prepares the analysis for later neural network classification.
 """
 
-import tensorflow as tf
-
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-)
-from sklearn.model_selection import train_test_split
-
-from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.optimizers import Adam
-
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 from sklearn.decomposition import PCA
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+)
 from sklearn.mixture import GaussianMixture
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.optimizers import Adam, SGD
 
 
 # ---------------------------------------------------------------------------
@@ -1344,7 +1342,8 @@ baseline_report_df = pd.DataFrame(
 
 baseline_report_df.to_csv(
     OUTPUT_DIR
-    / "baseline_classification_report.csv"
+    / "baseline_classification_report.csv",
+    index_label="Class",
 )
 
 # ---------------------------------------------------------------------------
@@ -1489,4 +1488,1115 @@ print(
 print(
     OUTPUT_DIR
     / "baseline_classification_report.csv"
+)
+
+# ---------------------------------------------------------------------------
+# Neural Network Experiment Utilities
+# ---------------------------------------------------------------------------
+
+def build_olive_classifier(
+    hidden_layers,
+    learning_rate,
+    optimizer_name,
+):
+    """Build and compile a configurable olive oil DNN classifier."""
+
+    # Remove the previous Keras model before starting a new experiment.
+    tf.keras.backend.clear_session()
+
+    # Reset the seed so each experiment is reproducible.
+    tf.keras.utils.set_random_seed(
+        RANDOM_SEED
+    )
+
+    model = Sequential()
+
+    model.add(
+        Input(
+            shape=(
+                X_train_scaled.shape[1],
+            )
+        )
+    )
+
+    # Add the requested hidden-layer architecture.
+    for neurons in hidden_layers:
+        model.add(
+            Dense(
+                neurons,
+                activation="relu",
+            )
+        )
+
+    # Binary classification requires one sigmoid output neuron.
+    model.add(
+        Dense(
+            1,
+            activation="sigmoid",
+        )
+    )
+
+
+    if optimizer_name == "adam":
+        optimizer = Adam(
+            learning_rate=learning_rate
+        )
+
+    elif optimizer_name == "sgd":
+        optimizer = SGD(
+            learning_rate=learning_rate
+        )
+
+    else:
+        raise ValueError(
+            f"Unsupported optimizer: "
+            f"{optimizer_name}"
+        )
+
+
+    model.compile(
+        optimizer=optimizer,
+        loss="binary_crossentropy",
+        metrics=[
+            "accuracy"
+        ],
+    )
+
+    return model
+
+
+def run_olive_experiment(
+    name,
+    hidden_layers,
+    batch_size,
+    epochs,
+    learning_rate,
+    optimizer_name,
+):
+    """Train one controlled olive oil neural-network experiment."""
+
+    print(
+        f"\nRunning experiment: "
+        f"{name}"
+    )
+
+
+    model = build_olive_classifier(
+        hidden_layers=hidden_layers,
+        learning_rate=learning_rate,
+        optimizer_name=optimizer_name,
+    )
+
+
+    history = model.fit(
+        X_train_scaled,
+        y_train_augmented,
+        validation_data=(
+            X_validation_scaled,
+            y_validation,
+        ),
+        epochs=epochs,
+        batch_size=batch_size,
+        verbose=0,
+    )
+
+
+    # -----------------------------------------------------------------------
+    # Experiment Metrics
+    # -----------------------------------------------------------------------
+
+    training_accuracy = (
+        history.history[
+            "accuracy"
+        ][-1]
+    )
+
+
+    validation_losses = np.array(
+        history.history[
+            "val_loss"
+        ]
+    )
+
+    validation_accuracies = np.array(
+        history.history[
+            "val_accuracy"
+        ]
+    )
+
+
+    # Find the epoch with the lowest validation loss.
+    best_epoch_index = int(
+        np.argmin(
+            validation_losses
+        )
+    )
+
+    best_epoch = (
+        best_epoch_index
+        + 1
+    )
+
+
+    minimum_validation_loss = (
+        validation_losses[
+            best_epoch_index
+        ]
+    )
+
+
+    validation_accuracy_at_best_loss = (
+        validation_accuracies[
+            best_epoch_index
+        ]
+    )
+
+
+    maximum_validation_accuracy = (
+        validation_accuracies.max()
+    )
+
+
+    print(
+        f"{name}: "
+        f"Training Accuracy="
+        f"{training_accuracy:.4f}, "
+        f"Minimum Validation Loss="
+        f"{minimum_validation_loss:.4f}, "
+        f"Best Epoch="
+        f"{best_epoch}, "
+        f"Validation Accuracy at Best Loss="
+        f"{validation_accuracy_at_best_loss:.4f}, "
+        f"Maximum Validation Accuracy="
+        f"{maximum_validation_accuracy:.4f}"
+    )
+
+
+    return {
+        "Experiment":
+            name,
+
+        "Hidden Layers":
+            len(
+                hidden_layers
+            ),
+
+        "Neurons":
+            "-".join(
+                map(
+                    str,
+                    hidden_layers,
+                )
+            ),
+
+        "Batch Size":
+            batch_size,
+
+        "Epochs":
+            epochs,
+
+        "Learning Rate":
+            learning_rate,
+
+        "Optimizer":
+            optimizer_name.upper(),
+
+        "Training Accuracy":
+            training_accuracy,
+
+        "Minimum Validation Loss":
+            minimum_validation_loss,
+
+        "Best Epoch":
+            best_epoch,
+
+        "Validation Accuracy at Best Loss":
+            validation_accuracy_at_best_loss,
+
+        "Maximum Validation Accuracy":
+            maximum_validation_accuracy,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Controlled Neural Network Experiments
+# ---------------------------------------------------------------------------
+
+# Add the baseline configuration as the reference experiment.
+
+baseline_validation_losses = np.array(
+    baseline_history.history[
+        "val_loss"
+    ]
+)
+
+baseline_validation_accuracies = np.array(
+    baseline_history.history[
+        "val_accuracy"
+    ]
+)
+
+baseline_best_epoch_index = int(
+    np.argmin(
+        baseline_validation_losses
+    )
+)
+
+
+experiment_results = [
+    {
+        "Experiment":
+            "Baseline",
+
+        "Hidden Layers":
+            2,
+
+        "Neurons":
+            "32-16",
+
+        "Batch Size":
+            64,
+
+        "Epochs":
+            100,
+
+        "Learning Rate":
+            0.001,
+
+        "Optimizer":
+            "ADAM",
+
+        "Training Accuracy":
+            baseline_history.history[
+                "accuracy"
+            ][-1],
+
+        "Minimum Validation Loss":
+            baseline_validation_losses[
+                baseline_best_epoch_index
+            ],
+
+        "Best Epoch":
+            baseline_best_epoch_index
+            + 1,
+
+        "Validation Accuracy at Best Loss":
+            baseline_validation_accuracies[
+                baseline_best_epoch_index
+            ],
+
+        "Maximum Validation Accuracy":
+            baseline_validation_accuracies.max(),
+    }
+]
+
+
+experiment_configs = [
+    # -----------------------------------------------------------------------
+    # Hidden-layer experiments
+    # -----------------------------------------------------------------------
+    {
+        "name":
+            "1 Hidden Layer",
+
+        "hidden_layers":
+            [32],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+    {
+        "name":
+            "3 Hidden Layers",
+
+        "hidden_layers":
+            [
+                50,
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+    {
+        "name":
+            "4 Hidden Layers",
+
+        "hidden_layers":
+            [
+                50,
+                40,
+                30,
+                20,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+    {
+        "name":
+            "5 Hidden Layers",
+
+        "hidden_layers":
+            [
+                50,
+                40,
+                30,
+                20,
+                10,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+
+    # -----------------------------------------------------------------------
+    # Batch-size experiment
+    # -----------------------------------------------------------------------
+    {
+        "name":
+            "Batch Size 128",
+
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            128,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+
+    # -----------------------------------------------------------------------
+    # Epoch experiments
+    # -----------------------------------------------------------------------
+    {
+        "name":
+            "200 Epochs",
+
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            200,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+    {
+        "name":
+            "400 Epochs",
+
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            400,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+
+    # -----------------------------------------------------------------------
+    # Learning-rate experiments
+    # -----------------------------------------------------------------------
+    {
+        "name":
+            "Learning Rate 0.0005",
+
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.0005,
+
+        "optimizer_name":
+            "adam",
+    },
+
+    {
+        "name":
+            "Learning Rate 0.0001",
+
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.0001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+
+    # -----------------------------------------------------------------------
+    # Optimizer experiment
+    # -----------------------------------------------------------------------
+    {
+        "name":
+            "SGD Optimizer",
+
+        "hidden_layers":
+            [
+                32,
+                16,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        # Keep the baseline learning rate so the optimizer is the primary
+        # controlled difference.
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "sgd",
+    },
+
+
+    # -----------------------------------------------------------------------
+    # Neuron-count experiments
+    # -----------------------------------------------------------------------
+    {
+        "name":
+            "10 Neurons Per Layer",
+
+        "hidden_layers":
+            [
+                10,
+                10,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+
+    {
+        "name":
+            "50 Neurons Per Layer",
+
+        "hidden_layers":
+            [
+                50,
+                50,
+            ],
+
+        "batch_size":
+            64,
+
+        "epochs":
+            100,
+
+        "learning_rate":
+            0.001,
+
+        "optimizer_name":
+            "adam",
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Run Controlled Experiments
+# ---------------------------------------------------------------------------
+
+for config in experiment_configs:
+    result = run_olive_experiment(
+        **config
+    )
+
+    experiment_results.append(
+        result
+    )
+
+
+# ---------------------------------------------------------------------------
+# Experiment Results Table
+# ---------------------------------------------------------------------------
+
+experiment_results_df = pd.DataFrame(
+    experiment_results
+)
+
+
+print(
+    "\nOlive oil neural network experiment results:"
+)
+
+print(
+    experiment_results_df.to_string(
+        index=False,
+        float_format=lambda value: (
+            f"{value:.4f}"
+        ),
+    )
+)
+
+
+experiment_results_df.to_csv(
+    OUTPUT_DIR
+    / "olive_dnn_experiment_results.csv",
+    index=False,
+)
+
+
+# ---------------------------------------------------------------------------
+# Validation-Based Model Selection
+# ---------------------------------------------------------------------------
+
+# Select the model configuration using validation performance only.
+# The untouched test set is deliberately not used during this selection.
+
+best_experiment_index = (
+    experiment_results_df[
+        "Minimum Validation Loss"
+    ]
+    .idxmin()
+)
+
+best_experiment = (
+    experiment_results_df.loc[
+        best_experiment_index
+    ]
+)
+
+
+print(
+    "\nBest experiment based on minimum validation loss:"
+)
+
+print(
+    best_experiment.to_string()
+)
+
+
+print(
+    "\nExperiment results saved to:"
+)
+
+print(
+    OUTPUT_DIR
+    / "olive_dnn_experiment_results.csv"
+)
+
+
+# ---------------------------------------------------------------------------
+# Final Selected Olive Oil Neural Network Classifier
+# ---------------------------------------------------------------------------
+
+print(
+    "\n--- Final Selected Olive Oil Neural Network Classifier ---"
+)
+
+
+# The final configuration is selected using validation performance from the
+# controlled experiments.
+#
+# Best configuration:
+# - 1 hidden layer
+# - 32 neurons
+# - Adam optimizer
+# - learning rate = 0.001
+# - batch size = 64
+# - best validation-loss epoch = 81
+
+final_classifier = build_olive_classifier(
+    hidden_layers=[
+        32,
+    ],
+    learning_rate=0.001,
+    optimizer_name="adam",
+)
+
+
+print(
+    "\nFinal olive oil classifier architecture:"
+)
+
+final_classifier.summary()
+
+
+# ---------------------------------------------------------------------------
+# Final Classifier Training
+# ---------------------------------------------------------------------------
+
+final_history = final_classifier.fit(
+    X_train_scaled,
+    y_train_augmented,
+    validation_data=(
+        X_validation_scaled,
+        y_validation,
+    ),
+    epochs=81,
+    batch_size=64,
+    verbose=1,
+)
+
+
+# ---------------------------------------------------------------------------
+# Final Classifier Evaluation
+# ---------------------------------------------------------------------------
+
+final_training_probability = (
+    final_classifier.predict(
+        X_train_scaled,
+        verbose=0,
+    )
+    .reshape(-1)
+)
+
+
+final_test_probability = (
+    final_classifier.predict(
+        X_test_scaled,
+        verbose=0,
+    )
+    .reshape(-1)
+)
+
+
+final_training_predictions = (
+    final_training_probability
+    >= 0.5
+).astype(
+    int
+)
+
+
+final_test_predictions = (
+    final_test_probability
+    >= 0.5
+).astype(
+    int
+)
+
+
+final_training_accuracy = accuracy_score(
+    y_train_augmented,
+    final_training_predictions,
+)
+
+
+final_test_accuracy = accuracy_score(
+    y_test,
+    final_test_predictions,
+)
+
+
+print(
+    "\nFinal olive oil classifier results:"
+)
+
+print(
+    f"Training accuracy: "
+    f"{final_training_accuracy:.4f}"
+)
+
+print(
+    f"Test accuracy: "
+    f"{final_test_accuracy:.4f}"
+)
+
+
+# ---------------------------------------------------------------------------
+# Final Classification Report
+# ---------------------------------------------------------------------------
+
+final_report_text = classification_report(
+    y_test,
+    final_test_predictions,
+    target_names=class_names,
+    digits=4,
+)
+
+
+print(
+    "\nFinal classification report:"
+)
+
+print(
+    final_report_text
+)
+
+
+final_report_dict = classification_report(
+    y_test,
+    final_test_predictions,
+    target_names=class_names,
+    digits=4,
+    output_dict=True,
+)
+
+
+final_report_df = pd.DataFrame(
+    final_report_dict
+).transpose()
+
+
+final_report_df.to_csv(
+    OUTPUT_DIR
+    / "final_classification_report.csv",
+    index_label="Class",
+)
+
+
+# ---------------------------------------------------------------------------
+# Final Accuracy Curve
+# ---------------------------------------------------------------------------
+
+final_epochs = range(
+    1,
+    len(
+        final_history.history[
+            "accuracy"
+        ]
+    )
+    + 1,
+)
+
+
+plt.figure(
+    figsize=(
+        9,
+        6,
+    )
+)
+
+
+plt.plot(
+    final_epochs,
+    final_history.history[
+        "accuracy"
+    ],
+    label="Training Accuracy",
+)
+
+
+plt.plot(
+    final_epochs,
+    final_history.history[
+        "val_accuracy"
+    ],
+    label="Validation Accuracy",
+)
+
+
+plt.xlabel(
+    "Epoch"
+)
+
+plt.ylabel(
+    "Accuracy"
+)
+
+plt.title(
+    "Olive Oil Final DNN - Accuracy Curve"
+)
+
+plt.legend()
+
+plt.tight_layout()
+
+
+plt.savefig(
+    OUTPUT_DIR
+    / "final_accuracy_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Final Loss Curve
+# ---------------------------------------------------------------------------
+
+plt.figure(
+    figsize=(
+        9,
+        6,
+    )
+)
+
+
+plt.plot(
+    final_epochs,
+    final_history.history[
+        "loss"
+    ],
+    label="Training Loss",
+)
+
+
+plt.plot(
+    final_epochs,
+    final_history.history[
+        "val_loss"
+    ],
+    label="Validation Loss",
+)
+
+
+plt.xlabel(
+    "Epoch"
+)
+
+plt.ylabel(
+    "Binary Cross-Entropy Loss"
+)
+
+plt.title(
+    "Olive Oil Final DNN - Loss Curve"
+)
+
+plt.legend()
+
+plt.tight_layout()
+
+
+plt.savefig(
+    OUTPUT_DIR
+    / "final_loss_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+
+# ---------------------------------------------------------------------------
+# Final Prediction Examples
+# ---------------------------------------------------------------------------
+
+final_prediction_results = pd.DataFrame(
+    {
+        "Actual Label":
+            y_test.reset_index(
+                drop=True
+            ),
+
+        "Predicted Label":
+            final_test_predictions,
+
+        "Organic Probability":
+            final_test_probability,
+    }
+)
+
+
+label_names = {
+    0: "Extra Virgin",
+    1: "Organic Extra Virgin",
+}
+
+
+# Select five examples from each class so both classes are represented.
+
+extra_examples = (
+    final_prediction_results[
+        final_prediction_results[
+            "Actual Label"
+        ] == 0
+    ]
+    .sample(
+        n=5,
+        random_state=RANDOM_SEED,
+    )
+)
+
+organic_examples = (
+    final_prediction_results[
+        final_prediction_results[
+            "Actual Label"
+        ] == 1
+    ]
+    .sample(
+        n=5,
+        random_state=RANDOM_SEED,
+    )
+)
+
+final_prediction_examples = pd.concat(
+    [
+        extra_examples,
+        organic_examples,
+    ],
+    ignore_index=True,
+)
+
+
+final_prediction_examples[
+    "Actual Label"
+] = (
+    final_prediction_examples[
+        "Actual Label"
+    ]
+    .map(
+        label_names
+    )
+)
+
+
+final_prediction_examples[
+    "Predicted Label"
+] = (
+    final_prediction_examples[
+        "Predicted Label"
+    ]
+    .map(
+        label_names
+    )
+)
+
+
+print(
+    "\n10 example predictions from the final olive oil classifier:"
+)
+
+print(
+    final_prediction_examples.to_string(
+        index=False,
+        formatters={
+            "Organic Probability":
+                lambda value: (
+                    f"{value:.4f}"
+                ),
+        },
+    )
+)
+
+
+final_prediction_examples.to_csv(
+    OUTPUT_DIR
+    / "final_prediction_examples.csv",
+    index=False,
+)
+
+
+print(
+    "\nGenerated final classifier outputs:"
+)
+
+print(
+    OUTPUT_DIR
+    / "final_accuracy_curve.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "final_loss_curve.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "final_classification_report.csv"
+)
+
+print(
+    OUTPUT_DIR
+    / "final_prediction_examples.csv"
 )
