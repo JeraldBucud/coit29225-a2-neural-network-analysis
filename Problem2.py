@@ -21,6 +21,18 @@ This program:
 - Prepares the analysis for later neural network classification.
 """
 
+import tensorflow as tf
+
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+)
+from sklearn.model_selection import train_test_split
+
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.optimizers import Adam
+
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -820,4 +832,661 @@ print(
 print(
     OUTPUT_DIR
     / "oleic_distribution_by_class.png"
+)
+
+
+# ---------------------------------------------------------------------------
+# Leakage-Safe Neural Network Data Preparation
+# ---------------------------------------------------------------------------
+
+# Encode the two classes numerically:
+#
+# 0 = Extra Virgin
+# 1 = Organic Extra Virgin
+
+class_mapping = {
+    "Extra Virgin": 0,
+    "Organic Extra Virgin": 1,
+}
+
+classification_model_data = (
+    classification_data.copy()
+)
+
+classification_model_data[
+    "target"
+] = (
+    classification_model_data[
+        "oil_class"
+    ]
+    .map(
+        class_mapping
+    )
+)
+
+
+X_original = classification_model_data[
+    feature_columns
+]
+
+y_original = classification_model_data[
+    "target"
+]
+
+
+# ---------------------------------------------------------------------------
+# Original Train / Validation / Test Split
+# ---------------------------------------------------------------------------
+
+# First reserve 20% of the original observations as the untouched test set.
+
+X_train_validation, X_test, y_train_validation, y_test = (
+    train_test_split(
+        X_original,
+        y_original,
+        test_size=0.20,
+        random_state=RANDOM_SEED,
+        stratify=y_original,
+    )
+)
+
+
+# Split the remaining original observations into training and validation sets.
+#
+# 20% of the remaining 80% becomes validation data, producing approximately:
+#
+# 64% training
+# 16% validation
+# 20% test
+
+X_train_original, X_validation, y_train_original, y_validation = (
+    train_test_split(
+        X_train_validation,
+        y_train_validation,
+        test_size=0.20,
+        random_state=RANDOM_SEED,
+        stratify=y_train_validation,
+    )
+)
+
+
+print(
+    "\nNeural network original-data split:"
+)
+
+print(
+    f"Training samples before GMM augmentation: "
+    f"{len(X_train_original)}"
+)
+
+print(
+    f"Validation samples: "
+    f"{len(X_validation)}"
+)
+
+print(
+    f"Testing samples: "
+    f"{len(X_test)}"
+)
+
+
+print(
+    "\nOriginal training class distribution:"
+)
+
+print(
+    y_train_original.value_counts().sort_index()
+)
+
+
+print(
+    "\nValidation class distribution:"
+)
+
+print(
+    y_validation.value_counts().sort_index()
+)
+
+
+print(
+    "\nTest class distribution:"
+)
+
+print(
+    y_test.value_counts().sort_index()
+)
+
+
+# ---------------------------------------------------------------------------
+# Training-Only GMM Augmentation
+# ---------------------------------------------------------------------------
+
+# Extract only Organic Extra Virgin observations from the original training
+# partition. The validation and test observations are not used when fitting
+# this GMM.
+
+organic_training_features = X_train_original[
+    y_train_original == 1
+].copy()
+
+
+training_gmm_scaler = StandardScaler()
+
+organic_training_scaled = (
+    training_gmm_scaler.fit_transform(
+        organic_training_features
+    )
+)
+
+
+training_gmm_model = GaussianMixture(
+    n_components=2,
+    covariance_type="full",
+    random_state=RANDOM_SEED,
+)
+
+training_gmm_model.fit(
+    organic_training_scaled
+)
+
+
+synthetic_training_scaled, _ = (
+    training_gmm_model.sample(
+        NUMBER_OF_SYNTHETIC_SAMPLES
+    )
+)
+
+
+synthetic_training_features = (
+    training_gmm_scaler.inverse_transform(
+        synthetic_training_scaled
+    )
+)
+
+
+# Limit generated values to the range observed in the Organic training data.
+
+training_organic_minimums = (
+    organic_training_features
+    .min()
+    .to_numpy()
+)
+
+training_organic_maximums = (
+    organic_training_features
+    .max()
+    .to_numpy()
+)
+
+
+synthetic_training_features = np.clip(
+    synthetic_training_features,
+    training_organic_minimums,
+    training_organic_maximums,
+)
+
+
+synthetic_training_features = (
+    np.rint(
+        synthetic_training_features
+    )
+    .astype(
+        int
+    )
+)
+
+
+synthetic_training_df = pd.DataFrame(
+    synthetic_training_features,
+    columns=feature_columns,
+)
+
+
+synthetic_training_target = pd.Series(
+    np.ones(
+        NUMBER_OF_SYNTHETIC_SAMPLES,
+        dtype=int,
+    ),
+    name="target",
+)
+
+
+# ---------------------------------------------------------------------------
+# Augmented Training Dataset
+# ---------------------------------------------------------------------------
+
+X_train_augmented = pd.concat(
+    [
+        X_train_original.reset_index(
+            drop=True
+        ),
+        synthetic_training_df,
+    ],
+    ignore_index=True,
+)
+
+
+y_train_augmented = pd.concat(
+    [
+        y_train_original.reset_index(
+            drop=True
+        ),
+        synthetic_training_target,
+    ],
+    ignore_index=True,
+)
+
+
+# Shuffle the augmented training set reproducibly.
+
+training_shuffle = np.random.default_rng(
+    RANDOM_SEED
+).permutation(
+    len(
+        X_train_augmented
+    )
+)
+
+
+X_train_augmented = (
+    X_train_augmented
+    .iloc[
+        training_shuffle
+    ]
+    .reset_index(
+        drop=True
+    )
+)
+
+y_train_augmented = (
+    y_train_augmented
+    .iloc[
+        training_shuffle
+    ]
+    .reset_index(
+        drop=True
+    )
+)
+
+
+print(
+    "\nTraining samples after GMM augmentation:"
+)
+
+print(
+    len(
+        X_train_augmented
+    )
+)
+
+
+print(
+    "\nAugmented training class distribution:"
+)
+
+print(
+    y_train_augmented
+    .value_counts()
+    .sort_index()
+)
+
+
+# ---------------------------------------------------------------------------
+# Neural Network Feature Scaling
+# ---------------------------------------------------------------------------
+
+# Fit the neural-network scaler only on the augmented training set.
+
+nn_scaler = StandardScaler()
+
+X_train_scaled = (
+    nn_scaler.fit_transform(
+        X_train_augmented
+    )
+)
+
+X_validation_scaled = (
+    nn_scaler.transform(
+        X_validation
+    )
+)
+
+X_test_scaled = (
+    nn_scaler.transform(
+        X_test
+    )
+)
+
+
+print(
+    "\nNumber of neural network input features:"
+)
+
+print(
+    X_train_scaled.shape[1]
+)
+
+# ---------------------------------------------------------------------------
+# Baseline Neural Network Classifier
+# ---------------------------------------------------------------------------
+
+tf.keras.utils.set_random_seed(
+    RANDOM_SEED
+)
+
+baseline_classifier = Sequential(
+    [
+        Input(
+            shape=(
+                X_train_scaled.shape[1],
+            )
+        ),
+        Dense(
+            32,
+            activation="relu",
+        ),
+        Dense(
+            16,
+            activation="relu",
+        ),
+        Dense(
+            1,
+            activation="sigmoid",
+        ),
+    ]
+)
+
+
+baseline_classifier.compile(
+    optimizer=Adam(
+        learning_rate=0.001
+    ),
+    loss="binary_crossentropy",
+    metrics=[
+        "accuracy"
+    ],
+)
+
+
+print(
+    "\nBaseline olive oil classifier architecture:"
+)
+
+baseline_classifier.summary()
+
+
+# ---------------------------------------------------------------------------
+# Baseline Classifier Training
+# ---------------------------------------------------------------------------
+
+print(
+    "\nTraining baseline olive oil classifier..."
+)
+
+baseline_history = baseline_classifier.fit(
+    X_train_scaled,
+    y_train_augmented,
+    validation_data=(
+        X_validation_scaled,
+        y_validation,
+    ),
+    epochs=100,
+    batch_size=64,
+    verbose=1,
+)
+
+
+# ---------------------------------------------------------------------------
+# Baseline Classifier Evaluation
+# ---------------------------------------------------------------------------
+
+baseline_training_probability = (
+    baseline_classifier.predict(
+        X_train_scaled,
+        verbose=0,
+    )
+    .reshape(-1)
+)
+
+baseline_test_probability = (
+    baseline_classifier.predict(
+        X_test_scaled,
+        verbose=0,
+    )
+    .reshape(-1)
+)
+
+
+baseline_training_predictions = (
+    baseline_training_probability
+    >= 0.5
+).astype(
+    int
+)
+
+baseline_test_predictions = (
+    baseline_test_probability
+    >= 0.5
+).astype(
+    int
+)
+
+
+baseline_training_accuracy = accuracy_score(
+    y_train_augmented,
+    baseline_training_predictions,
+)
+
+baseline_test_accuracy = accuracy_score(
+    y_test,
+    baseline_test_predictions,
+)
+
+
+print(
+    "\nBaseline olive oil classifier results:"
+)
+
+print(
+    f"Training accuracy: "
+    f"{baseline_training_accuracy:.4f}"
+)
+
+print(
+    f"Test accuracy: "
+    f"{baseline_test_accuracy:.4f}"
+)
+
+
+# ---------------------------------------------------------------------------
+# Baseline Classification Report
+# ---------------------------------------------------------------------------
+
+class_names = [
+    "Extra Virgin",
+    "Organic Extra Virgin",
+]
+
+
+baseline_report_text = classification_report(
+    y_test,
+    baseline_test_predictions,
+    target_names=class_names,
+    digits=4,
+)
+
+
+print(
+    "\nBaseline classification report:"
+)
+
+print(
+    baseline_report_text
+)
+
+
+# Create a structured version of the classification report so the results
+# can be saved as a CSV file for the technical report.
+
+baseline_report_dict = classification_report(
+    y_test,
+    baseline_test_predictions,
+    target_names=class_names,
+    digits=4,
+    output_dict=True,
+)
+
+
+baseline_report_df = pd.DataFrame(
+    baseline_report_dict
+).transpose()
+
+
+baseline_report_df.to_csv(
+    OUTPUT_DIR
+    / "baseline_classification_report.csv"
+)
+
+# ---------------------------------------------------------------------------
+# Baseline Accuracy Training Curve
+# ---------------------------------------------------------------------------
+
+baseline_epochs = range(
+    1,
+    len(
+        baseline_history.history[
+            "accuracy"
+        ]
+    )
+    + 1,
+)
+
+
+plt.figure(
+    figsize=(
+        9,
+        6,
+    )
+)
+
+
+plt.plot(
+    baseline_epochs,
+    baseline_history.history[
+        "accuracy"
+    ],
+    label="Training Accuracy",
+)
+
+
+plt.plot(
+    baseline_epochs,
+    baseline_history.history[
+        "val_accuracy"
+    ],
+    label="Validation Accuracy",
+)
+
+
+plt.xlabel(
+    "Epoch"
+)
+
+plt.ylabel(
+    "Accuracy"
+)
+
+plt.title(
+    "Olive Oil Baseline DNN - Accuracy Curve"
+)
+
+plt.legend()
+
+plt.tight_layout()
+
+
+plt.savefig(
+    OUTPUT_DIR
+    / "baseline_accuracy_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+# ---------------------------------------------------------------------------
+# Baseline Loss Training Curve
+# ---------------------------------------------------------------------------
+
+plt.figure(
+    figsize=(
+        9,
+        6,
+    )
+)
+
+
+plt.plot(
+    baseline_epochs,
+    baseline_history.history[
+        "loss"
+    ],
+    label="Training Loss",
+)
+
+
+plt.plot(
+    baseline_epochs,
+    baseline_history.history[
+        "val_loss"
+    ],
+    label="Validation Loss",
+)
+
+
+plt.xlabel(
+    "Epoch"
+)
+
+plt.ylabel(
+    "Binary Cross-Entropy Loss"
+)
+
+plt.title(
+    "Olive Oil Baseline DNN - Loss Curve"
+)
+
+plt.legend()
+
+plt.tight_layout()
+
+
+plt.savefig(
+    OUTPUT_DIR
+    / "baseline_loss_curve.png",
+    dpi=300,
+    bbox_inches="tight",
+)
+
+plt.close()
+
+
+print(
+    "\nGenerated baseline classifier outputs:"
+)
+
+print(
+    OUTPUT_DIR
+    / "baseline_accuracy_curve.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "baseline_loss_curve.png"
+)
+
+print(
+    OUTPUT_DIR
+    / "baseline_classification_report.csv"
 )
